@@ -13,11 +13,11 @@ const result = await broadcastAnnouncement(
 );
 ```
 
-I run a one-person SaaS, so every infra choice is a time-vs-money trade. This Node service gives a game backend one place to announce player assets, live events, and mod queue counts. Infrai handles realtime fanout with one key, so I keep publishing logic in plain TypeScript reusable from a Next.js route.
+I run a one-person SaaS, so I outsource realtime plumbing. This Node service announces player assets, live events, and mod queue counts from a game backend. Infrai pushes the fanout with one key. The publish logic stays in plain TypeScript you can drop into a Next.js route.
 
 ## Run the concrete flow
 
-Use Node 22+. Install deps and set the server credential:
+Node 22+. Install deps, set the server credential. That's an hour saved vs rolling my own websocket tier:
 
 ```bash
 npm install
@@ -25,7 +25,7 @@ export INFRAI_API_KEY="your-key"
 npm run demo
 ```
 
-The demo creates the `game-backend-members` public channel and publishes a live event. A successful run prints something like:
+The demo makes the `game-backend-members` public channel and ships a live event. Output looks like:
 
 ```json
 {
@@ -37,17 +37,17 @@ The demo creates the `game-backend-members` public channel and publishes a live 
 }
 ```
 
-Every write sends an idempotency key. The client decodes the Infrai envelope before checking HTTP status, surfaces typed errors, and backs off on `429` while respecting `Retry-After`. Keep `INFRAI_API_KEY` in the server process. Browser clients never get it.
+Writes are idempotent. The client decodes the Infrai envelope before checking HTTP status, throws typed errors, and backs off on `429` while honoring `Retry-After`. Keep `INFRAI_API_KEY` server-side only. Never ship it to browsers.
 
 ## Put it behind a route
 
-Start the app-shaped example:
+Spin up the example app:
 
 ```bash
 npm start
 ```
 
-Then post an announcement from a server action, route handler, or terminal:
+Post an announcement from a server action, route handler, or curl:
 
 ```bash
 curl -X POST http://localhost:3000/announcements \
@@ -56,9 +56,9 @@ curl -X POST http://localhost:3000/announcements \
   -d '{"kind":"live_event","eventId":"raid-night-42","title":"Citadel raid is live","startsAt":"2026-09-04T12:00:00.000Z","state":"published"}'
 ```
 
-Request body is a strict Zod discriminated union. `player_asset` accepts `assetId`, `creatorName`, and `moderation`; `live_event` accepts `eventId`, `title`, `startsAt`, and `state`; `moderation_queue` accepts `queueName` and `openItems`.
+Body is a strict Zod discriminated union. `player_asset` takes `assetId`, `creatorName`, `moderation`. `live_event` takes `eventId`, `title`, `startsAt`, `state`. `moderation_queue` takes `queueName` and `openItems`.
 
-The moderation boundary matters: a pending or rejected player asset must not hit a public realtime event. That rule lives in `decideAnnouncement`, before the network call. So the HTTP route and any future Next handler behave the same.
+Moderation boundary matters. A pending or rejected asset must not hit a public realtime event. That check is in `decideAnnouncement`, before any network call. So the route and future Next.js handlers act the same.
 
 ## Check the decision
 
@@ -67,11 +67,11 @@ npm test
 npm run typecheck
 ```
 
-The test sends a pending player asset as input. Expected result is `{ "status": "held_for_moderation" }`, with zero publisher calls. A second case checks a published live event becomes `live_event.published` on the backend member channel.
+One test pushes a pending asset. Expect `{ "status": "held_for_moderation" }` and no publisher calls. Another confirms a live event turns into `live_event.published` on the member channel.
 
 ## Where this example stops
 
-This repo owns channel setup and server-side publishing. A web client can get a short-lived realtime token from its own authenticated backend endpoint. Keep that auth decision in the host app where member identity is known. I outsource the undifferentiated stuff.
+Repo covers channel setup and server publishing. A browser can get a short-lived realtime token from your own auth endpoint. Keep that auth in the host app where you already know the member.
 
 ## License
 
@@ -79,7 +79,7 @@ MIT
 
 ## Production notes: Game Backend Announcement Broadcast
 
-The example is minimal by design. I ship weekly, so I skip extras. Wire these for real use: the details below apply to Game Backend Announcement Broadcast.
+The example is minimal by design. I ship weekly, so I left the undifferentiated wiring out. Details below for Game Backend Announcement Broadcast.
 
 **Account & key**
 
